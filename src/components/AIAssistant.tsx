@@ -17,7 +17,7 @@ import type { AgentNode, AgentNodeData } from '../types';
 import type { Edge } from '@xyflow/react';
 import type { ViewMode } from './Toolbar';
 
-type ChangeType = 'add_node' | 'remove_node' | 'update_node' | 'add_edge' | 'remove_edge' | 'update_config' | 'update_edge';
+type ChangeType = 'add_node' | 'remove_node' | 'update_node' | 'add_edge' | 'remove_edge' | 'update_config' | 'update_edge' | 'code_override' | 'code_snippet';
 
 interface Change {
   type: ChangeType;
@@ -62,7 +62,7 @@ export default function AIAssistant({
     {
       id: '1',
       role: 'assistant',
-      content: "Hi! I'm your AI assistant. I can help you build and modify your agentic workflow. Try asking me to:\n\n• \"Add a human approval step after the LLM\"\n• \"Change the model to Claude 3 Opus\"\n• \"Add error handling to the workflow\"\n• \"Create a RAG pipeline for document Q&A\"",
+      content: "Hi! I'm your AI assistant. I can help you build and modify your agentic workflow in both **visual** and **code** modes.\n\n**Visual commands:**\n• \"Add a human approval step\"\n• \"Change model to Claude\"\n• \"Create a RAG pipeline\"\n\n**Code commands:**\n• \"Add try-except error handling\"\n• \"Add logging and debugging\"\n• \"Add caching to reduce API calls\"\n• \"Add Pydantic validation\"\n• \"Add streaming support\"",
       timestamp: new Date(),
     },
   ]);
@@ -97,6 +97,7 @@ export default function AIAssistant({
         input.trim(),
         nodes,
         edges,
+        viewMode,
         { onAddNode, onRemoveNode, onUpdateNode, onAddEdge, onRemoveEdge, onSetNodes, onSetEdges }
       );
 
@@ -320,12 +321,14 @@ async function processAIRequest(
   prompt: string,
   nodes: AgentNode[],
   edges: Edge[],
+  viewMode: ViewMode,
   actions: AIActions
 ): Promise<AIResult> {
   // Simulate processing delay
   await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 500));
 
   const lowerPrompt = prompt.toLowerCase();
+  const isCodeMode = viewMode === 'code' || viewMode === 'split';
 
   // Pattern matching for different intents
 
@@ -854,9 +857,587 @@ async function processAIRequest(
     }
   }
 
+  // ============================================
+  // CODE-SPECIFIC MODIFICATIONS
+  // ============================================
+
+  // Add try-except / error handling code
+  if (lowerPrompt.includes('try') || lowerPrompt.includes('except') || lowerPrompt.includes('catch') ||
+      (lowerPrompt.includes('error') && lowerPrompt.includes('handling') && isCodeMode)) {
+    const llmNode = nodes.find(n => n.data.type === 'llm');
+    const targetNode = llmNode || nodes.find(n => n.data.type === 'toolUse');
+
+    if (targetNode) {
+      const codeOverride = `@dataclass
+class ${toPascalCase(targetNode.data.label)}Node:
+    """${targetNode.data.label} with enhanced error handling"""
+    model: str = "${targetNode.data.config.model || 'gpt-4'}"
+    temperature: float = ${targetNode.data.config.temperature || 0.7}
+    max_retries: int = 3
+
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        last_error = None
+
+        for attempt in range(self.max_retries):
+            try:
+                # Main execution logic
+                result = await self._execute_with_timeout(context)
+                return result
+            except TimeoutError as e:
+                last_error = e
+                logger.warning(f"Attempt {attempt + 1} timed out: {e}")
+            except APIError as e:
+                last_error = e
+                logger.error(f"API error on attempt {attempt + 1}: {e}")
+                if e.status_code == 429:  # Rate limit
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    raise
+            except Exception as e:
+                last_error = e
+                logger.exception(f"Unexpected error: {e}")
+                raise
+
+        raise RuntimeError(f"Failed after {self.max_retries} attempts: {last_error}")
+
+    async def _execute_with_timeout(self, context: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
+        return await asyncio.wait_for(self._do_execute(context), timeout=timeout)
+
+    async def _do_execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Core LLM call
+        return {"response": "placeholder"}`;
+
+      actions.onUpdateNode(targetNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've added comprehensive error handling code to the ${targetNode.data.label} node with:\n\n• **Retry logic** with exponential backoff\n• **Timeout handling** (30s default)\n• **Rate limit detection** (429 errors)\n• **Structured logging**\n\nThe node now has a code override that you can further customize. This may break bi-directional sync.`,
+        changes: [
+          { type: 'code_override', description: 'Added try-except with retries' },
+          { type: 'code_snippet', description: 'Added timeout wrapper' },
+        ],
+      };
+    }
+  }
+
+  // Add logging to code
+  if (lowerPrompt.includes('log') || lowerPrompt.includes('debug') || lowerPrompt.includes('trace')) {
+    const llmNode = nodes.find(n => n.data.type === 'llm');
+    const targetNode = llmNode || nodes[1] || nodes[0];
+
+    if (targetNode) {
+      const codeOverride = `import logging
+from functools import wraps
+
+# Configure structured logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+def log_execution(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        logger.info(f"Starting {func.__name__}", extra={
+            "node_id": "${targetNode.id}",
+            "node_type": "${targetNode.data.type}"
+        })
+        try:
+            result = await func(*args, **kwargs)
+            logger.info(f"Completed {func.__name__}", extra={
+                "node_id": "${targetNode.id}",
+                "success": True
+            })
+            return result
+        except Exception as e:
+            logger.error(f"Failed {func.__name__}: {e}", extra={
+                "node_id": "${targetNode.id}",
+                "error": str(e)
+            })
+            raise
+    return wrapper
+
+@dataclass
+class ${toPascalCase(targetNode.data.label)}Node:
+    """${targetNode.data.label} with logging instrumentation"""
+
+    @log_execution
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        logger.debug("Input context", extra={"context_keys": list(context.keys())})
+
+        # Main logic here
+        result = {"response": "placeholder"}
+
+        logger.debug("Output result", extra={"result_keys": list(result.keys())})
+        return result`;
+
+      actions.onUpdateNode(targetNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've added structured logging to the ${targetNode.data.label} node:\n\n• **Decorator-based logging** via \`@log_execution\`\n• **Structured log entries** with node_id and context\n• **Debug-level tracing** for inputs/outputs\n• **Error capture** with full context\n\nYou can view these logs in your observability platform.`,
+        changes: [
+          { type: 'code_override', description: 'Added logging decorator' },
+          { type: 'code_snippet', description: 'Configured structured logger' },
+        ],
+      };
+    }
+  }
+
+  // Add custom Python code / code block
+  if (lowerPrompt.includes('custom code') || lowerPrompt.includes('python code') ||
+      lowerPrompt.includes('code block') || lowerPrompt.includes('write code')) {
+    const llmNode = nodes.find(n => n.data.type === 'llm');
+
+    if (llmNode) {
+      const codeOverride = `@dataclass
+class ${toPascalCase(llmNode.data.label)}Node:
+    """
+    Custom implementation for ${llmNode.data.label}
+
+    This code override allows full Python flexibility.
+    Modify the execute() method to implement your custom logic.
+    """
+    model: str = "${llmNode.data.config.model || 'gpt-4'}"
+    temperature: float = ${llmNode.data.config.temperature || 0.7}
+
+    # Add your custom attributes here
+    custom_config: Dict[str, Any] = None
+
+    def __post_init__(self):
+        self.custom_config = self.custom_config or {}
+        # Initialize any custom resources
+
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Custom execution logic.
+
+        Args:
+            context: Contains 'input' and 'results' from previous nodes
+
+        Returns:
+            Dict with execution results
+        """
+        # ===== YOUR CUSTOM CODE HERE =====
+
+        input_data = context.get("input", {})
+        previous_results = context.get("results", {})
+
+        # Example: Custom preprocessing
+        processed_input = self._preprocess(input_data)
+
+        # Example: Call external service
+        # response = await self._call_external_api(processed_input)
+
+        # Example: Post-processing
+        result = {
+            "response": "Implement your custom logic here",
+            "metadata": {
+                "model": self.model,
+                "custom": True
+            }
+        }
+
+        return result
+
+    def _preprocess(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        # Add custom preprocessing logic
+        return data`;
+
+      actions.onUpdateNode(llmNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've created a custom code template for the ${llmNode.data.label} node. The template includes:\n\n• **Customizable dataclass** with attributes\n• **Pre/post processing hooks**\n• **Async execute method** ready for your logic\n• **Helper methods** scaffold\n\nEdit the code in the Code view to implement your custom behavior. Note: Custom code may not round-trip to visual.`,
+        changes: [
+          { type: 'code_override', description: 'Created custom code template' },
+        ],
+      };
+    }
+  }
+
+  // Add validation / type checking
+  if (lowerPrompt.includes('validation') || lowerPrompt.includes('type check') ||
+      lowerPrompt.includes('validate') || lowerPrompt.includes('pydantic')) {
+    const targetNode = nodes.find(n => n.data.type === 'extraction') || nodes.find(n => n.data.type === 'llm');
+
+    if (targetNode) {
+      const codeOverride = `from pydantic import BaseModel, Field, validator
+from typing import Optional, List
+
+class InputSchema(BaseModel):
+    """Validates incoming data"""
+    query: str = Field(..., min_length=1, max_length=10000)
+    context: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+
+    @validator('query')
+    def query_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError('Query cannot be empty or whitespace')
+        return v.strip()
+
+class OutputSchema(BaseModel):
+    """Validates outgoing data"""
+    response: str
+    confidence: float = Field(ge=0, le=1)
+    sources: Optional[List[str]] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+@dataclass
+class ${toPascalCase(targetNode.data.label)}Node:
+    """${targetNode.data.label} with Pydantic validation"""
+    strict_validation: bool = True
+
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Validate input
+        try:
+            validated_input = InputSchema(**context.get("input", {}))
+        except ValidationError as e:
+            if self.strict_validation:
+                raise
+            logger.warning(f"Input validation warning: {e}")
+            validated_input = context.get("input", {})
+
+        # Main logic
+        result = {
+            "response": "placeholder",
+            "confidence": 0.95,
+            "sources": [],
+            "metadata": {}
+        }
+
+        # Validate output
+        validated_output = OutputSchema(**result)
+        return validated_output.dict()`;
+
+      actions.onUpdateNode(targetNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've added Pydantic validation to the ${targetNode.data.label} node:\n\n• **InputSchema** - validates incoming queries\n• **OutputSchema** - ensures response structure\n• **Field validators** - custom validation logic\n• **Strict mode toggle** - fail or warn on invalid data\n\nCustomize the schemas to match your data requirements.`,
+        changes: [
+          { type: 'code_override', description: 'Added Pydantic schemas' },
+          { type: 'code_snippet', description: 'Input/output validation' },
+        ],
+      };
+    }
+  }
+
+  // Add caching / memoization
+  if (lowerPrompt.includes('cache') || lowerPrompt.includes('memoize') || lowerPrompt.includes('memoization')) {
+    const targetNode = nodes.find(n => n.data.type === 'retrieval') || nodes.find(n => n.data.type === 'llm');
+
+    if (targetNode) {
+      const codeOverride = `from functools import lru_cache
+import hashlib
+import json
+from datetime import datetime, timedelta
+
+class CacheManager:
+    """Simple TTL cache for node results"""
+    def __init__(self, ttl_seconds: int = 300):
+        self._cache: Dict[str, tuple] = {}
+        self.ttl = timedelta(seconds=ttl_seconds)
+
+    def _hash_key(self, data: Dict) -> str:
+        return hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+    def get(self, key: Dict) -> Optional[Any]:
+        hash_key = self._hash_key(key)
+        if hash_key in self._cache:
+            value, timestamp = self._cache[hash_key]
+            if datetime.now() - timestamp < self.ttl:
+                return value
+            del self._cache[hash_key]
+        return None
+
+    def set(self, key: Dict, value: Any):
+        self._cache[self._hash_key(key)] = (value, datetime.now())
+
+@dataclass
+class ${toPascalCase(targetNode.data.label)}Node:
+    """${targetNode.data.label} with caching"""
+    cache_ttl: int = 300  # 5 minutes
+    enable_cache: bool = True
+
+    def __post_init__(self):
+        self._cache = CacheManager(self.cache_ttl)
+
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        cache_key = context.get("input", {})
+
+        # Check cache
+        if self.enable_cache:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("Cache hit", extra={"node": "${targetNode.id}"})
+                return {**cached, "_cached": True}
+
+        # Execute and cache result
+        result = await self._execute_uncached(context)
+
+        if self.enable_cache:
+            self._cache.set(cache_key, result)
+
+        return result
+
+    async def _execute_uncached(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Core logic here
+        return {"response": "placeholder"}`;
+
+      actions.onUpdateNode(targetNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've added caching to the ${targetNode.data.label} node:\n\n• **TTL-based cache** (5 min default)\n• **Hash-based cache keys** from input\n• **Cache hit logging** for monitoring\n• **Togglable** via \`enable_cache\` flag\n\nThis reduces redundant API calls for repeated queries.`,
+        changes: [
+          { type: 'code_override', description: 'Added CacheManager class' },
+          { type: 'code_snippet', description: 'Implemented TTL caching' },
+        ],
+      };
+    }
+  }
+
+  // Add middleware / decorator chain
+  if (lowerPrompt.includes('middleware') || lowerPrompt.includes('decorator') || lowerPrompt.includes('wrapper')) {
+    const llmNode = nodes.find(n => n.data.type === 'llm');
+
+    if (llmNode) {
+      const codeOverride = `from functools import wraps
+from typing import Callable, Awaitable
+
+# Middleware types
+Middleware = Callable[[Callable], Callable]
+
+def rate_limit(calls_per_minute: int = 60):
+    """Rate limiting middleware"""
+    tokens = calls_per_minute
+    last_refill = datetime.now()
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            nonlocal tokens, last_refill
+            now = datetime.now()
+            tokens += (now - last_refill).seconds * (calls_per_minute / 60)
+            tokens = min(tokens, calls_per_minute)
+            last_refill = now
+
+            if tokens < 1:
+                raise RateLimitExceeded("Rate limit exceeded")
+            tokens -= 1
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def timeout(seconds: int = 30):
+    """Timeout middleware"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
+        return wrapper
+    return decorator
+
+def retry(max_attempts: int = 3, backoff: float = 2.0):
+    """Retry middleware with exponential backoff"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_attempts - 1:
+                        raise
+                    await asyncio.sleep(backoff ** attempt)
+        return wrapper
+    return decorator
+
+@dataclass
+class ${toPascalCase(llmNode.data.label)}Node:
+    """${llmNode.data.label} with middleware chain"""
+
+    @retry(max_attempts=3)
+    @timeout(seconds=30)
+    @rate_limit(calls_per_minute=60)
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Core logic with middleware protection
+        return {"response": "placeholder"}`;
+
+      actions.onUpdateNode(llmNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've added a middleware/decorator chain to the ${llmNode.data.label} node:\n\n• **@retry** - Exponential backoff (3 attempts)\n• **@timeout** - 30s execution limit\n• **@rate_limit** - 60 calls/minute\n\nMiddleware executes in order: rate_limit → timeout → retry. You can stack additional decorators as needed.`,
+        changes: [
+          { type: 'code_override', description: 'Created middleware decorators' },
+          { type: 'code_snippet', description: 'Applied decorator chain' },
+        ],
+      };
+    }
+  }
+
+  // Add async streaming
+  if (lowerPrompt.includes('stream') || lowerPrompt.includes('streaming') || lowerPrompt.includes('async generator')) {
+    const llmNode = nodes.find(n => n.data.type === 'llm');
+
+    if (llmNode) {
+      const codeOverride = `from typing import AsyncIterator
+
+@dataclass
+class ${toPascalCase(llmNode.data.label)}Node:
+    """${llmNode.data.label} with streaming support"""
+    model: str = "${llmNode.data.config.model || 'gpt-4'}"
+    temperature: float = ${llmNode.data.config.temperature || 0.7}
+    stream_enabled: bool = True
+
+    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        if self.stream_enabled:
+            # Return a streaming response
+            chunks = []
+            async for chunk in self.stream_response(context):
+                chunks.append(chunk)
+            return {"response": "".join(chunks), "streamed": True}
+        else:
+            return await self.execute_sync(context)
+
+    async def stream_response(self, context: Dict[str, Any]) -> AsyncIterator[str]:
+        """
+        Async generator that yields response chunks.
+
+        Usage:
+            async for chunk in node.stream_response(context):
+                print(chunk, end="", flush=True)
+        """
+        # TODO: Replace with actual streaming API call
+        # Example with OpenAI:
+        # async for chunk in await openai.ChatCompletion.acreate(
+        #     model=self.model,
+        #     messages=[...],
+        #     stream=True
+        # ):
+        #     if chunk.choices[0].delta.content:
+        #         yield chunk.choices[0].delta.content
+
+        # Placeholder streaming simulation
+        words = "This is a streaming response from the LLM node.".split()
+        for word in words:
+            yield word + " "
+            await asyncio.sleep(0.1)
+
+    async def execute_sync(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Non-streaming fallback"""
+        return {"response": "Non-streamed response", "streamed": False}`;
+
+      actions.onUpdateNode(llmNode.id, {
+        hasCodeOverride: true,
+        codeOverride: codeOverride,
+      });
+
+      return {
+        success: true,
+        message: `I've added streaming support to the ${llmNode.data.label} node:\n\n• **AsyncIterator** - yields response chunks\n• **Configurable** via \`stream_enabled\` flag\n• **Fallback** to sync execution\n• **Ready for OpenAI/Anthropic** streaming APIs\n\nThis enables real-time response display in your UI.`,
+        changes: [
+          { type: 'code_override', description: 'Added async streaming' },
+          { type: 'code_snippet', description: 'Created stream_response generator' },
+        ],
+      };
+    }
+  }
+
+  // Set/modify system prompt with code
+  if ((lowerPrompt.includes('system') && lowerPrompt.includes('prompt')) ||
+      lowerPrompt.includes('instruction') || lowerPrompt.includes('persona')) {
+    const llmNode = nodes.find(n => n.data.type === 'llm');
+
+    if (llmNode && isCodeMode) {
+      // Extract instruction type from prompt
+      let systemPrompt = '';
+      let persona = 'assistant';
+
+      if (lowerPrompt.includes('expert') || lowerPrompt.includes('specialist')) {
+        persona = 'expert';
+        systemPrompt = `You are an expert assistant with deep domain knowledge.
+
+Guidelines:
+- Provide detailed, technical explanations
+- Cite sources and best practices when relevant
+- Ask clarifying questions for complex queries
+- Acknowledge uncertainty when appropriate`;
+      } else if (lowerPrompt.includes('concise') || lowerPrompt.includes('brief')) {
+        persona = 'concise';
+        systemPrompt = `You are a concise assistant focused on brevity.
+
+Guidelines:
+- Keep responses under 3 sentences when possible
+- Use bullet points for lists
+- Skip pleasantries and get to the point
+- Only elaborate if explicitly asked`;
+      } else if (lowerPrompt.includes('code') || lowerPrompt.includes('developer')) {
+        persona = 'developer';
+        systemPrompt = `You are a senior software engineer assistant.
+
+Guidelines:
+- Provide working code examples
+- Explain trade-offs and alternatives
+- Follow best practices and design patterns
+- Include error handling in code samples`;
+      } else {
+        systemPrompt = llmNode.data.config.systemPrompt as string || 'You are a helpful assistant.';
+      }
+
+      actions.onUpdateNode(llmNode.id, {
+        config: {
+          ...llmNode.data.config,
+          systemPrompt,
+          persona,
+        },
+      });
+
+      return {
+        success: true,
+        message: `I've updated the system prompt to a **${persona}** persona:\n\n\`\`\`\n${systemPrompt}\n\`\`\`\n\nThis prompt is now reflected in the generated Python code.`,
+        changes: [
+          { type: 'update_config', description: `Set ${persona} system prompt` },
+          { type: 'code_snippet', description: 'Updated LLM configuration' },
+        ],
+      };
+    }
+  }
+
   // Default response for unrecognized requests
+  const codeHelpText = isCodeMode
+    ? "\n\n**Code-specific commands:**\n• \"Add try-except error handling\"\n• \"Add logging/debugging\"\n• \"Add caching\"\n• \"Add validation with Pydantic\"\n• \"Add streaming support\"\n• \"Add middleware decorators\""
+    : "";
+
   return {
     success: false,
-    message: "I'm not sure how to handle that request. Here are some things I can do:\n\n• Add nodes: \"Add a human approval step\", \"Add memory\", \"Add error handling\"\n• Modify settings: \"Change model to Claude\", \"Set temperature to 0.3\"\n• Create workflows: \"Create a RAG pipeline\"\n• Remove nodes: \"Remove the approval step\"\n\nTry being more specific about what you'd like to change!",
+    message: `I'm not sure how to handle that request. Here are some things I can do:\n\n**Visual/Canvas:**\n• Add nodes: \"Add a human approval step\", \"Add memory\"\n• Modify settings: \"Change model to Claude\", \"Set temperature to 0.3\"\n• Create workflows: \"Create a RAG pipeline\"\n• Remove nodes: \"Remove the approval step\"${codeHelpText}\n\nTry being more specific about what you'd like to change!`,
   };
+}
+
+// Helper function for code generation
+function toPascalCase(str: string): string {
+  return str
+    .split(/[^a-zA-Z0-9]/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join('');
 }
