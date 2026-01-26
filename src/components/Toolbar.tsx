@@ -10,6 +10,7 @@ import {
   Code,
   Columns,
   Eye,
+  FlaskConical,
 } from 'lucide-react';
 
 export type ViewMode = 'visual' | 'code' | 'split';
@@ -23,6 +24,7 @@ interface ToolbarProps {
   onAutoLayout: () => void;
   onSave: () => void;
   onRun: () => void;
+  onEvaluate: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
   onUndo?: () => void;
@@ -38,6 +40,7 @@ export default function Toolbar({
   onAutoLayout,
   onSave,
   onRun,
+  onEvaluate,
   canUndo,
   canRedo,
   onUndo,
@@ -144,6 +147,14 @@ export default function Toolbar({
         </button>
 
         <div className="w-px h-6 bg-[#313244] mx-2" />
+
+        <button
+          onClick={onEvaluate}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#cdd6f4] bg-purple-600/20 border border-purple-500/50 rounded-md hover:bg-purple-600/30 transition-colors"
+        >
+          <FlaskConical className="w-4 h-4 text-purple-400" />
+          Evaluate
+        </button>
 
         <button
           onClick={onRun}

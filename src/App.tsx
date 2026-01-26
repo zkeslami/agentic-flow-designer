@@ -22,6 +22,7 @@ import PropertiesPanel from './components/PropertiesPanel';
 import CodePanel from './components/CodePanel';
 import Toolbar, { type ViewMode } from './components/Toolbar';
 import AIAssistant from './components/AIAssistant';
+import EvaluationPanel from './components/EvaluationPanel';
 
 const nodeTypes = {
   agentNode: AgentNodeComponent,
@@ -86,6 +87,8 @@ function FlowDesigner() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
+  const [isEvalPanelOpen, setIsEvalPanelOpen] = useState(false);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
 
   const onConnect = useCallback(
@@ -264,6 +267,7 @@ function FlowDesigner() {
         onAutoLayout={handleAutoLayout}
         onSave={handleSave}
         onRun={handleRun}
+        onEvaluate={() => setIsEvalPanelOpen(true)}
       />
 
       {/* Main Content */}
@@ -347,8 +351,19 @@ function FlowDesigner() {
           onRemoveEdge={handleRemoveEdge}
           onSetNodes={handleSetNodes}
           onSetEdges={handleSetEdges}
+          onOpenEvaluation={() => setIsEvalPanelOpen(true)}
         />
       </div>
+
+      {/* Evaluation Panel */}
+      <EvaluationPanel
+        nodes={agentNodes}
+        edges={edges}
+        selectedNodeIds={selectedNodeIds}
+        onSelectNodes={setSelectedNodeIds}
+        isOpen={isEvalPanelOpen}
+        onClose={() => setIsEvalPanelOpen(false)}
+      />
     </div>
   );
 }

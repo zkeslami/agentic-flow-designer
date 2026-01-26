@@ -17,7 +17,7 @@ import type { AgentNode, AgentNodeData } from '../types';
 import type { Edge } from '@xyflow/react';
 import type { ViewMode } from './Toolbar';
 
-type ChangeType = 'add_node' | 'remove_node' | 'update_node' | 'add_edge' | 'remove_edge' | 'update_config' | 'update_edge' | 'code_override' | 'code_snippet';
+type ChangeType = 'add_node' | 'remove_node' | 'update_node' | 'add_edge' | 'remove_edge' | 'update_config' | 'update_edge' | 'code_override' | 'code_snippet' | 'open_evaluation' | 'generate_tests' | 'configure_evaluator';
 
 interface Change {
   type: ChangeType;
@@ -44,6 +44,7 @@ interface AIAssistantProps {
   onRemoveEdge: (edgeId: string) => void;
   onSetNodes: (nodes: AgentNode[]) => void;
   onSetEdges: (edges: Edge[]) => void;
+  onOpenEvaluation?: () => void;
 }
 
 export default function AIAssistant({
@@ -57,12 +58,13 @@ export default function AIAssistant({
   onRemoveEdge,
   onSetNodes,
   onSetEdges,
+  onOpenEvaluation,
 }: AIAssistantProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
-      content: "Hi! I'm your AI assistant. I can help you build and modify your agentic workflow in both **visual** and **code** modes.\n\n**Visual commands:**\n• \"Add a human approval step\"\n• \"Change model to Claude\"\n• \"Create a RAG pipeline\"\n\n**Code commands:**\n• \"Add try-except error handling\"\n• \"Add logging and debugging\"\n• \"Add caching to reduce API calls\"\n• \"Add Pydantic validation\"\n• \"Add streaming support\"",
+      content: "Hi! I'm your AI assistant. I can help you build, modify, and **evaluate** your agentic workflow.\n\n**Visual commands:**\n• \"Add a human approval step\"\n• \"Create a RAG pipeline\"\n\n**Code commands:**\n• \"Add error handling\"\n• \"Add caching\"\n\n**Evaluation commands:**\n• \"Run evaluation on my flow\"\n• \"Generate test cases\"\n• \"Configure LLM judge evaluator\"\n• \"Set up online monitoring\"",
       timestamp: new Date(),
     },
   ]);
@@ -98,7 +100,7 @@ export default function AIAssistant({
         nodes,
         edges,
         viewMode,
-        { onAddNode, onRemoveNode, onUpdateNode, onAddEdge, onRemoveEdge, onSetNodes, onSetEdges }
+        { onAddNode, onRemoveNode, onUpdateNode, onAddEdge, onRemoveEdge, onSetNodes, onSetEdges, onOpenEvaluation }
       );
 
       const assistantMessage: Message = {
@@ -307,6 +309,7 @@ interface AIActions {
   onRemoveEdge: (edgeId: string) => void;
   onSetNodes: (nodes: AgentNode[]) => void;
   onSetEdges: (edges: Edge[]) => void;
+  onOpenEvaluation?: () => void;
 }
 
 interface AIResult {
@@ -1423,14 +1426,95 @@ Guidelines:
     }
   }
 
+  // ============================================
+  // EVALUATION COMMANDS
+  // ============================================
+
+  // Open evaluation panel / run evaluation
+  if (lowerPrompt.includes('evaluat') || lowerPrompt.includes('test') && (lowerPrompt.includes('run') || lowerPrompt.includes('flow'))) {
+    if (actions.onOpenEvaluation) {
+      actions.onOpenEvaluation();
+    }
+
+    return {
+      success: true,
+      message: `I've opened the **Evaluation Studio** for you. Here's what you can do:\n\n**Offline Evaluation:**\n• Create or import datasets (CSV/JSON)\n• Generate test cases with AI\n• Select evaluators (Exact Match, JSON Similarity, LLM Judge, etc.)\n• Run evaluations on full flow, subgraphs, or individual nodes\n\n**Online Evaluation:**\n• Configure triggers (after each run, on error, scheduled)\n• Set alert thresholds for drift detection\n• Compare against baseline datasets\n\n**Evaluators available:**\n• Exact Match\n• Contains/Keywords\n• JSON Similarity\n• Context Precision\n• LLM Judge (Output)\n• LLM Judge (Trajectory)\n• Trajectory Match`,
+      changes: [
+        { type: 'open_evaluation', description: 'Opened Evaluation Studio' },
+      ],
+    };
+  }
+
+  // Generate test cases
+  if (lowerPrompt.includes('generate') && (lowerPrompt.includes('test') || lowerPrompt.includes('dataset') || lowerPrompt.includes('case'))) {
+    if (actions.onOpenEvaluation) {
+      actions.onOpenEvaluation();
+    }
+
+    const nodeTypes = nodes.map(n => n.data.type).join(', ');
+
+    return {
+      success: true,
+      message: `I can help you generate test cases for your workflow!\n\nYour flow contains: **${nodeTypes}**\n\n**To generate test cases:**\n1. Click **"Generate with AI"** in the Datasets tab\n2. Specify the number of test cases\n3. Choose to include edge cases and negative cases\n\n**Test case types I'll generate:**\n• **Standard cases** - typical inputs and expected outputs\n• **Edge cases** - empty inputs, very long inputs, special characters\n• **Negative cases** - invalid schemas, injection attempts\n\nI've opened the Evaluation Studio for you. Go to the **Datasets** tab to create your test suite.`,
+      changes: [
+        { type: 'generate_tests', description: 'Ready to generate test cases' },
+        { type: 'open_evaluation', description: 'Opened Evaluation Studio' },
+      ],
+    };
+  }
+
+  // Configure evaluators
+  if (lowerPrompt.includes('evaluator') || lowerPrompt.includes('llm judge') || lowerPrompt.includes('exact match') || lowerPrompt.includes('json similar')) {
+    if (actions.onOpenEvaluation) {
+      actions.onOpenEvaluation();
+    }
+
+    let evaluatorInfo = '';
+    if (lowerPrompt.includes('llm judge') || lowerPrompt.includes('ai judge')) {
+      evaluatorInfo = `**LLM Judge Evaluators:**\n\n• **LLM Judge (Output)** - Uses AI to evaluate response quality\n  - Criteria: accuracy, relevance, completeness, coherence\n  - Configurable rubric and scoring scale (1-5)\n\n• **LLM Judge (Trajectory)** - Uses AI to evaluate execution path\n  - Assesses reasoning quality\n  - Validates step ordering\n  - Can allow extra steps or require strict matching`;
+    } else if (lowerPrompt.includes('exact match')) {
+      evaluatorInfo = `**Exact Match Evaluator:**\n• Compares output exactly to expected value\n• Options: case-sensitive, trim whitespace\n• Best for: deterministic outputs, IDs, codes`;
+    } else if (lowerPrompt.includes('json')) {
+      evaluatorInfo = `**JSON Similarity Evaluator:**\n• Compares JSON structure and values\n• Configurable similarity threshold (0-1)\n• Can ignore specific fields\n• Handles nested objects and arrays\n• Best for: structured API responses`;
+    } else {
+      evaluatorInfo = `**Available Evaluators:**\n\n| Evaluator | Use Case |\n|-----------|----------|\n| Exact Match | Deterministic outputs |\n| Contains | Keyword presence |\n| JSON Similarity | Structured responses |\n| Context Precision | RAG grounding quality |\n| LLM Judge (Output) | Subjective quality |\n| LLM Judge (Trajectory) | Path validation |\n| Trajectory Match | Execution order |`;
+    }
+
+    return {
+      success: true,
+      message: `${evaluatorInfo}\n\nI've opened the Evaluation Studio. Go to the **Configure** tab to select and customize your evaluators.`,
+      changes: [
+        { type: 'configure_evaluator', description: 'Showed evaluator options' },
+        { type: 'open_evaluation', description: 'Opened Evaluation Studio' },
+      ],
+    };
+  }
+
+  // Online evaluation / drift detection
+  if (lowerPrompt.includes('online') || lowerPrompt.includes('drift') || lowerPrompt.includes('monitor') || lowerPrompt.includes('production')) {
+    if (actions.onOpenEvaluation) {
+      actions.onOpenEvaluation();
+    }
+
+    return {
+      success: true,
+      message: `**Online Evaluations** let you continuously monitor your flow in production.\n\n**Trigger Types:**\n• **After Every Run** - Evaluate each execution\n• **On Node Execute** - Evaluate specific nodes\n• **Scheduled** - Run at intervals (hourly, daily, weekly)\n• **On Error** - Evaluate when errors occur\n\n**Drift Detection:**\n• Set a baseline dataset from design-time tests\n• Compare production runs against baseline\n• Get alerts when quality drops below thresholds\n\n**Alert Thresholds:**\n• Minimum score (default: 70%)\n• Maximum latency (default: 5000ms)\n• Maximum error rate (default: 10%)\n\nI've opened the **Online Evals** tab for you.`,
+      changes: [
+        { type: 'open_evaluation', description: 'Opened Online Evaluations' },
+      ],
+    };
+  }
+
   // Default response for unrecognized requests
   const codeHelpText = isCodeMode
     ? "\n\n**Code-specific commands:**\n• \"Add try-except error handling\"\n• \"Add logging/debugging\"\n• \"Add caching\"\n• \"Add validation with Pydantic\"\n• \"Add streaming support\"\n• \"Add middleware decorators\""
     : "";
 
+  const evalHelpText = "\n\n**Evaluation commands:**\n• \"Run evaluation\" - Open Evaluation Studio\n• \"Generate test cases\" - AI-generate test data\n• \"Configure evaluators\" - Set up LLM Judge, exact match, etc.\n• \"Set up online monitoring\" - Configure drift detection";
+
   return {
     success: false,
-    message: `I'm not sure how to handle that request. Here are some things I can do:\n\n**Visual/Canvas:**\n• Add nodes: \"Add a human approval step\", \"Add memory\"\n• Modify settings: \"Change model to Claude\", \"Set temperature to 0.3\"\n• Create workflows: \"Create a RAG pipeline\"\n• Remove nodes: \"Remove the approval step\"${codeHelpText}\n\nTry being more specific about what you'd like to change!`,
+    message: `I'm not sure how to handle that request. Here are some things I can do:\n\n**Visual/Canvas:**\n• Add nodes: \"Add a human approval step\", \"Add memory\"\n• Modify settings: \"Change model to Claude\", \"Set temperature to 0.3\"\n• Create workflows: \"Create a RAG pipeline\"\n• Remove nodes: \"Remove the approval step\"${codeHelpText}${evalHelpText}\n\nTry being more specific about what you'd like to change!`,
   };
 }
 
