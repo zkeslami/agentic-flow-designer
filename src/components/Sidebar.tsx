@@ -16,9 +16,14 @@ import {
   GripVertical,
   Settings2,
   Boxes,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  RefreshCw,
+  ArrowLeftRight,
   type LucideProps,
 } from 'lucide-react';
-import type { AgentPatternType } from '../types';
+import type { AgentPatternType, SyncStatus } from '../types';
 import { nodeConfigs, nodeCategories } from '../utils/nodeConfig';
 import type { FlowArgumentsConfig } from '../types/execution';
 import ArgumentsPanel from './ArgumentsPanel';
@@ -46,6 +51,69 @@ interface SidebarProps {
   selectedNodeId?: string | null;
   nodeArguments?: Record<string, FlowArgumentsConfig>;
   onUpdateNodeArguments?: (nodeId: string, args: FlowArgumentsConfig) => void;
+  syncStatus?: SyncStatus;
+  nodeCount?: number;
+  edgeCount?: number;
+}
+
+// Sync status display for footer
+function getSyncIndicator(status: SyncStatus): {
+  icon: React.ReactNode;
+  text: string;
+  color: string;
+  dotColor: string;
+} {
+  switch (status) {
+    case 'synced':
+      return {
+        icon: <CheckCircle2 className="w-3 h-3" />,
+        text: 'Visual ↔ Code in sync',
+        color: 'text-green-400',
+        dotColor: 'bg-green-500',
+      };
+    case 'visual_ahead':
+      return {
+        icon: <ArrowLeftRight className="w-3 h-3" />,
+        text: 'Visual changes pending',
+        color: 'text-blue-400',
+        dotColor: 'bg-blue-500',
+      };
+    case 'code_ahead':
+      return {
+        icon: <ArrowLeftRight className="w-3 h-3" />,
+        text: 'Code changes pending',
+        color: 'text-amber-400',
+        dotColor: 'bg-amber-500',
+      };
+    case 'conflict':
+      return {
+        icon: <AlertCircle className="w-3 h-3" />,
+        text: 'Sync conflict detected',
+        color: 'text-red-400',
+        dotColor: 'bg-red-500',
+      };
+    case 'code_only':
+      return {
+        icon: <AlertTriangle className="w-3 h-3" />,
+        text: 'Code-only regions exist',
+        color: 'text-purple-400',
+        dotColor: 'bg-purple-500',
+      };
+    case 'parsing':
+      return {
+        icon: <RefreshCw className="w-3 h-3 animate-spin" />,
+        text: 'Synchronizing...',
+        color: 'text-[#6c7086]',
+        dotColor: 'bg-[#6c7086]',
+      };
+    default:
+      return {
+        icon: <CheckCircle2 className="w-3 h-3" />,
+        text: 'Visual ↔ Code in sync',
+        color: 'text-green-400',
+        dotColor: 'bg-green-500',
+      };
+  }
 }
 
 export default function Sidebar({
@@ -55,7 +123,11 @@ export default function Sidebar({
   selectedNodeId,
   nodeArguments,
   onUpdateNodeArguments,
+  syncStatus = 'synced',
+  nodeCount = 0,
+  edgeCount = 0,
 }: SidebarProps) {
+  const syncIndicator = getSyncIndicator(syncStatus);
   const [activeTab, setActiveTab] = useState<SidebarTab>('nodes');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     triggers: true,
@@ -175,14 +247,25 @@ export default function Sidebar({
             ))}
           </div>
 
-          {/* Footer */}
+          {/* Footer with Sync Status */}
           <div className="p-4 border-t border-[#313244]">
-            <div className="text-xs text-[#6c7086] space-y-1">
-              <p className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                Visual ↔ Code in sync
-              </p>
-              <p className="text-[#45475a]">
+            <div className="text-xs space-y-2">
+              {/* Sync Status */}
+              <div className={`flex items-center gap-2 ${syncIndicator.color}`}>
+                <span className={`w-2 h-2 rounded-full ${syncIndicator.dotColor}`}></span>
+                <span className="flex items-center gap-1.5">
+                  {syncIndicator.icon}
+                  {syncIndicator.text}
+                </span>
+              </div>
+
+              {/* Node/Edge Count */}
+              <div className="flex items-center justify-between text-[#45475a]">
+                <span>{nodeCount} nodes • {edgeCount} edges</span>
+              </div>
+
+              {/* Help Text */}
+              <p className="text-[#45475a] pt-1 border-t border-[#313244]/50">
                 Drag to add • Click to configure
               </p>
             </div>

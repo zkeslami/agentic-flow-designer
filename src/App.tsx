@@ -14,7 +14,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from '@xyflow/react';
-import type { AgentNode, AgentPatternType, AgentNodeData } from './types';
+import type { AgentNode, AgentPatternType, AgentNodeData, SyncStatus } from './types';
 import { nodeConfigs } from './utils/nodeConfig';
 import AgentNodeComponent from './components/AgentNode';
 import Sidebar from './components/Sidebar';
@@ -104,6 +104,26 @@ function FlowDesigner() {
   const [currentRun, setCurrentRun] = useState<ExecutionRun | null>(null);
   const [runHistory, setRunHistory] = useState<ExecutionRun[]>([]);
   const [recentTestInputs, setRecentTestInputs] = useState<TestInput[]>([]);
+
+  // Sync status for bidirectional editing (CGIS Architecture)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
+
+  // Determine sync status based on node states
+  const computedSyncStatus = useMemo<SyncStatus>(() => {
+    // Check if any nodes have code overrides
+    const hasCodeOnlyRegions = nodes.some((n) => (n.data as AgentNodeData).hasCodeOverride);
+    if (hasCodeOnlyRegions) return 'code_only';
+    return syncStatus;
+  }, [nodes, syncStatus]);
+
+  // Force sync handler
+  const handleForceSync = useCallback(() => {
+    setSyncStatus('parsing');
+    // Simulate sync process
+    setTimeout(() => {
+      setSyncStatus('synced');
+    }, 500);
+  }, []);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -395,6 +415,8 @@ function FlowDesigner() {
         onSave={handleSave}
         onRun={handleRun}
         onEvaluate={() => setIsEvalPanelOpen(true)}
+        syncStatus={computedSyncStatus}
+        onForceSync={handleForceSync}
       />
 
       {/* Main Content */}
@@ -406,6 +428,9 @@ function FlowDesigner() {
             flowArguments={flowArguments}
             onUpdateArguments={setFlowArguments}
             selectedNodeId={selectedNode}
+            syncStatus={computedSyncStatus}
+            nodeCount={nodes.length}
+            edgeCount={edges.length}
           />
         )}
 

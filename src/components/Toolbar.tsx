@@ -11,7 +11,13 @@ import {
   Columns,
   Eye,
   FlaskConical,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  ArrowLeftRight,
 } from 'lucide-react';
+import type { SyncStatus } from '../types';
 
 export type ViewMode = 'visual' | 'code' | 'split';
 
@@ -29,7 +35,61 @@ interface ToolbarProps {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
+  syncStatus?: SyncStatus;
+  onForceSync?: () => void;
 }
+
+// Sync status display configuration
+const SYNC_STATUS_CONFIG: Record<SyncStatus, {
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  bgColor: string;
+  description: string;
+}> = {
+  synced: {
+    label: 'Synced',
+    icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+    color: 'text-green-400',
+    bgColor: 'bg-green-500/10 border-green-500/30',
+    description: 'Visual and code are in sync',
+  },
+  visual_ahead: {
+    label: 'Visual Ahead',
+    icon: <ArrowLeftRight className="w-3.5 h-3.5" />,
+    color: 'text-blue-400',
+    bgColor: 'bg-blue-500/10 border-blue-500/30',
+    description: 'Visual has unsaved changes',
+  },
+  code_ahead: {
+    label: 'Code Ahead',
+    icon: <ArrowLeftRight className="w-3.5 h-3.5" />,
+    color: 'text-amber-400',
+    bgColor: 'bg-amber-500/10 border-amber-500/30',
+    description: 'Code has changes not in visual',
+  },
+  conflict: {
+    label: 'Conflict',
+    icon: <AlertCircle className="w-3.5 h-3.5" />,
+    color: 'text-red-400',
+    bgColor: 'bg-red-500/10 border-red-500/30',
+    description: 'Conflicting changes detected',
+  },
+  code_only: {
+    label: 'Code Only',
+    icon: <AlertTriangle className="w-3.5 h-3.5" />,
+    color: 'text-purple-400',
+    bgColor: 'bg-purple-500/10 border-purple-500/30',
+    description: 'Some code cannot be visualized',
+  },
+  parsing: {
+    label: 'Syncing',
+    icon: <RefreshCw className="w-3.5 h-3.5 animate-spin" />,
+    color: 'text-[#6c7086]',
+    bgColor: 'bg-[#313244]/50 border-[#45475a]',
+    description: 'Synchronizing changes...',
+  },
+};
 
 export default function Toolbar({
   viewMode,
@@ -45,10 +105,14 @@ export default function Toolbar({
   canRedo,
   onUndo,
   onRedo,
+  syncStatus = 'synced',
+  onForceSync,
 }: ToolbarProps) {
+  const statusConfig = SYNC_STATUS_CONFIG[syncStatus];
+
   return (
     <div className="h-12 bg-[#181825] border-b border-[#313244] flex items-center justify-between px-4">
-      {/* Left: File actions */}
+      {/* Left: File actions & Sync Status */}
       <div className="flex items-center gap-1">
         <button
           onClick={onSave}
@@ -57,6 +121,17 @@ export default function Toolbar({
           <Save className="w-4 h-4" />
           Save
         </button>
+
+        {/* Sync Status Indicator */}
+        <div className="w-px h-6 bg-[#313244] mx-2" />
+        <div
+          className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border ${statusConfig.bgColor} ${statusConfig.color} cursor-help`}
+          title={statusConfig.description}
+          onClick={onForceSync}
+        >
+          {statusConfig.icon}
+          <span>{statusConfig.label}</span>
+        </div>
 
         <div className="w-px h-6 bg-[#313244] mx-2" />
 
