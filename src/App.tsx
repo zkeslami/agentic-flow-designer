@@ -23,6 +23,10 @@ import CodePanel from './components/CodePanel';
 import Toolbar, { type ViewMode } from './components/Toolbar';
 import AIAssistant from './components/AIAssistant';
 import EvaluationPanel from './components/EvaluationPanel';
+import TestInputModal from './components/TestInputModal';
+import ExecutionPanel from './components/ExecutionPanel';
+import type { FlowArgumentsConfig, ExecutionRun, TestInput, ExecutionTrace } from './types/execution';
+import { DEFAULT_FLOW_ARGUMENTS, createExecutionTrace } from './types/execution';
 
 const nodeTypes = {
   agentNode: AgentNodeComponent,
@@ -90,6 +94,16 @@ function FlowDesigner() {
   const [isEvalPanelOpen, setIsEvalPanelOpen] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
+
+  // Flow arguments state
+  const [flowArguments, setFlowArguments] = useState<FlowArgumentsConfig>(DEFAULT_FLOW_ARGUMENTS);
+
+  // Execution state
+  const [isTestInputModalOpen, setIsTestInputModalOpen] = useState(false);
+  const [isExecutionPanelOpen, setIsExecutionPanelOpen] = useState(false);
+  const [currentRun, setCurrentRun] = useState<ExecutionRun | null>(null);
+  const [runHistory, setRunHistory] = useState<ExecutionRun[]>([]);
+  const [recentTestInputs, setRecentTestInputs] = useState<TestInput[]>([]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -244,7 +258,120 @@ function FlowDesigner() {
   }, [nodes, edges]);
 
   const handleRun = useCallback(() => {
-    alert('Workflow execution would start here.\n\nIn a real implementation, this would:\n1. Validate the workflow\n2. Send to backend runtime\n3. Show execution progress');
+    setIsTestInputModalOpen(true);
+  }, []);
+
+  const handleExecuteFlow = useCallback((input: Record<string, unknown>) => {
+    setIsTestInputModalOpen(false);
+    setIsExecutionPanelOpen(true);
+
+    // Create a new execution run
+    const runId = `run-${Date.now()}`;
+    const newRun: ExecutionRun = {
+      id: runId,
+      name: `Run ${runHistory.length + 1}`,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      input,
+      traces: [],
+      summary: {
+        totalNodes: nodes.length,
+        completedNodes: 0,
+        failedNodes: 0,
+        totalDurationMs: 0,
+      },
+    };
+
+    setCurrentRun(newRun);
+
+    // Simulate execution with traces
+    const simulateExecution = async () => {
+      const traces: ExecutionTrace[] = [];
+      let completedNodes = 0;
+
+      for (const node of nodes) {
+        const nodeData = node.data as AgentNodeData;
+        const trace = createExecutionTrace(node.id, nodeData.label, nodeData.type, input);
+        trace.status = 'running';
+        trace.llmExplanation = `Processing ${nodeData.label}...`;
+
+        // Update current run with new trace
+        traces.push(trace);
+        setCurrentRun(prev => prev ? {
+          ...prev,
+          traces: [...traces],
+        } : null);
+
+        // Simulate processing time
+        await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+
+        // Complete the trace
+        trace.status = 'completed';
+        trace.completedAt = new Date().toISOString();
+        trace.durationMs = Math.floor(500 + Math.random() * 1000);
+        trace.output = { result: `Output from ${nodeData.label}` };
+        trace.llmExplanation = `Completed processing ${nodeData.label}`;
+        trace.reasoning = nodeData.type === 'llm' ? 'Analyzed the input and generated a response based on the context provided.' : undefined;
+        trace.metadata = {
+          model: nodeData.type === 'llm' ? 'gpt-4' : undefined,
+          tokensInput: nodeData.type === 'llm' ? Math.floor(Math.random() * 500) : undefined,
+          tokensOutput: nodeData.type === 'llm' ? Math.floor(Math.random() * 300) : undefined,
+          latencyMs: trace.durationMs,
+        };
+
+        completedNodes++;
+
+        setCurrentRun(prev => prev ? {
+          ...prev,
+          traces: [...traces],
+          summary: {
+            ...prev.summary,
+            completedNodes,
+            totalDurationMs: traces.reduce((acc, t) => acc + t.durationMs, 0),
+          },
+        } : null);
+      }
+
+      // Complete the run
+      setCurrentRun(prev => {
+        if (!prev) return null;
+        const completedRun: ExecutionRun = {
+          ...prev,
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          output: { response: 'Workflow completed successfully' },
+        };
+        setRunHistory(history => [completedRun, ...history]);
+        return completedRun;
+      });
+    };
+
+    simulateExecution();
+  }, [nodes, runHistory.length]);
+
+  const handleSaveTestInput = useCallback((input: TestInput) => {
+    setRecentTestInputs(prev => [input, ...prev.slice(0, 9)]);
+  }, []);
+
+  const handleSelectRun = useCallback((runId: string) => {
+    const run = runHistory.find(r => r.id === runId);
+    if (run) {
+      setCurrentRun(run);
+    }
+  }, [runHistory]);
+
+  const handleRerun = useCallback(() => {
+    if (currentRun?.input) {
+      handleExecuteFlow(currentRun.input);
+    }
+  }, [currentRun, handleExecuteFlow]);
+
+  const handleCancelRun = useCallback(() => {
+    setCurrentRun(prev => prev ? {
+      ...prev,
+      status: 'cancelled',
+      completedAt: new Date().toISOString(),
+    } : null);
   }, []);
 
   const selectedNodeData = useMemo(() => {
@@ -273,7 +400,14 @@ function FlowDesigner() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar - Node palette */}
-        {viewMode !== 'code' && <Sidebar onDragStart={onDragStart} />}
+        {viewMode !== 'code' && (
+          <Sidebar
+            onDragStart={onDragStart}
+            flowArguments={flowArguments}
+            onUpdateArguments={setFlowArguments}
+            selectedNodeId={selectedNode}
+          />
+        )}
 
         {/* Canvas / Code View */}
         <div className="flex-1 flex">
@@ -363,6 +497,28 @@ function FlowDesigner() {
         onSelectNodes={setSelectedNodeIds}
         isOpen={isEvalPanelOpen}
         onClose={() => setIsEvalPanelOpen(false)}
+      />
+
+      {/* Test Input Modal */}
+      <TestInputModal
+        isOpen={isTestInputModalOpen}
+        onClose={() => setIsTestInputModalOpen(false)}
+        onRun={handleExecuteFlow}
+        flowArguments={flowArguments}
+        recentInputs={recentTestInputs}
+        onSaveInput={handleSaveTestInput}
+      />
+
+      {/* Execution Panel */}
+      <ExecutionPanel
+        isOpen={isExecutionPanelOpen}
+        onClose={() => setIsExecutionPanelOpen(false)}
+        onToggle={() => setIsExecutionPanelOpen(prev => !prev)}
+        currentRun={currentRun}
+        runHistory={runHistory}
+        onSelectRun={handleSelectRun}
+        onRerun={handleRerun}
+        onCancel={handleCancelRun}
       />
     </div>
   );
