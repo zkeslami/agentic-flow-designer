@@ -7,10 +7,12 @@ import {
   ChevronRight,
   AlertTriangle,
   Check,
+  Puzzle,
 } from 'lucide-react';
-import type { AgentNode, AgentPatternType, ConfigField } from '../types';
+import type { AgentNode, AgentPatternType, ConfigField, DeepRAGConfig, BatchTransformConfig } from '../types';
 import { nodeConfigs } from '../utils/nodeConfig';
 import Editor from '@monaco-editor/react';
+import { DeepRAGEditor, BatchTransformEditor } from './PatternEditors';
 
 interface PropertiesPanelProps {
   node: AgentNode | null;
@@ -24,13 +26,15 @@ export default function PropertiesPanel({
   onClose,
 }: PropertiesPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [activeTab, setActiveTab] = useState<'config' | 'code'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'pattern' | 'code'>('config');
 
   if (!node) return null;
 
   const config = nodeConfigs[node.data.type as AgentPatternType];
   const basicFields = config.configSchema.filter((f) => !f.advanced);
   const advancedFields = config.configSchema.filter((f) => f.advanced);
+  const isPatternNode = config.isPattern;
+  const nodeType = node.data.type as AgentPatternType;
 
   const handleConfigChange = (key: string, value: unknown) => {
     onUpdate(node.id, {
@@ -78,8 +82,21 @@ export default function PropertiesPanel({
               : 'text-[#6c7086] hover:text-[#a6adc8]'
           }`}
         >
-          Configuration
+          Config
         </button>
+        {isPatternNode && (
+          <button
+            onClick={() => setActiveTab('pattern')}
+            className={`flex-1 px-4 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+              activeTab === 'pattern'
+                ? 'text-purple-400 border-b-2 border-purple-400'
+                : 'text-[#6c7086] hover:text-[#a6adc8]'
+            }`}
+          >
+            <Puzzle className="w-3.5 h-3.5" />
+            Pattern
+          </button>
+        )}
         <button
           onClick={() => setActiveTab('code')}
           className={`flex-1 px-4 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
@@ -98,7 +115,37 @@ export default function PropertiesPanel({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'config' ? (
+        {activeTab === 'pattern' && isPatternNode ? (
+          <div className="p-4">
+            {nodeType === 'deepRAG' && (
+              <DeepRAGEditor
+                config={node.data.config as Partial<DeepRAGConfig>}
+                onChange={(patternConfig) => {
+                  onUpdate(node.id, {
+                    config: { ...node.data.config, ...patternConfig },
+                  });
+                }}
+              />
+            )}
+            {nodeType === 'batchTransform' && (
+              <BatchTransformEditor
+                config={node.data.config as Partial<BatchTransformConfig>}
+                onChange={(patternConfig) => {
+                  onUpdate(node.id, {
+                    config: { ...node.data.config, ...patternConfig },
+                  });
+                }}
+              />
+            )}
+            {nodeType !== 'deepRAG' && nodeType !== 'batchTransform' && (
+              <div className="p-4 text-center text-[#6c7086]">
+                <Puzzle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Pattern editor coming soon</p>
+                <p className="text-xs mt-1">Use the Config tab for now</p>
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'config' ? (
           <div className="p-4 space-y-4">
             {/* Node Label */}
             <div>

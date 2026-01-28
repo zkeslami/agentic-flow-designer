@@ -14,6 +14,25 @@ import {
   ArrowRightCircle,
   AlertTriangle,
   Code,
+  // Pattern and specialized node icons
+  Bot,
+  BookOpen,
+  Table,
+  Grid3X3,
+  Files,
+  // Context engineering node icons
+  PenLine,
+  MousePointer2,
+  Minimize2,
+  Split,
+  // Data pipeline node icons
+  Download,
+  Layers,
+  FileEdit,
+  Stethoscope,
+  MessageCircle,
+  // Pattern indicator
+  Puzzle,
   type LucideProps,
 } from 'lucide-react';
 import type { AgentNodeData, AgentPatternType, AgentNode } from '../types';
@@ -31,12 +50,59 @@ const iconMap: Record<string, React.FC<LucideProps>> = {
   UserCheck,
   Sparkles,
   ArrowRightCircle,
+  // Pattern and specialized nodes
+  Bot,
+  BookOpen,
+  Table,
+  Grid3x3: Grid3X3,
+  Files,
+  // Context engineering nodes
+  PenLine,
+  MousePointer2,
+  Minimize2,
+  Split,
+  // Data pipeline nodes
+  Download,
+  Layers,
+  FileEdit,
+  Stethoscope,
+  MessageCircle,
 };
 
 function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
   const nodeData = data as AgentNodeData;
   const config = nodeConfigs[nodeData.type as AgentPatternType];
   const IconComponent = iconMap[config?.icon] || Zap;
+  const isPatternNode = config?.isPattern;
+  const isContextNode = config?.category === 'context';
+  const isDataPipelineNode = config?.category === 'dataPipeline';
+
+  // Get category-specific styling
+  const getCategoryBadge = () => {
+    if (isPatternNode) {
+      return (
+        <div className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-purple-500/90 rounded text-[9px] font-medium text-white flex items-center gap-0.5">
+          <Puzzle className="w-2.5 h-2.5" />
+          Pattern
+        </div>
+      );
+    }
+    if (isContextNode) {
+      return (
+        <div className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-cyan-500/90 rounded text-[9px] font-medium text-white">
+          Context
+        </div>
+      );
+    }
+    if (isDataPipelineNode) {
+      return (
+        <div className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-emerald-500/90 rounded text-[9px] font-medium text-white">
+          Pipeline
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div
@@ -44,8 +110,12 @@ function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
         relative min-w-[180px] rounded-lg border-2 bg-[#1e1e2e] shadow-lg transition-all
         ${selected ? 'border-blue-500 shadow-blue-500/20' : 'border-[#313244] hover:border-[#45475a]'}
         ${nodeData.hasCodeOverride ? 'ring-2 ring-amber-500/50 ring-offset-2 ring-offset-[#1e1e2e]' : ''}
+        ${isPatternNode ? 'border-dashed' : ''}
       `}
     >
+      {/* Category Badge */}
+      {getCategoryBadge()}
+
       {/* Input Handle */}
       {nodeData.type !== 'trigger' && (
         <Handle

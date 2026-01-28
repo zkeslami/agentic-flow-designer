@@ -21,6 +21,21 @@ import {
   AlertCircle,
   RefreshCw,
   ArrowLeftRight,
+  // New icons for pattern and context nodes
+  Bot,
+  BookOpen,
+  Table,
+  Grid3X3,
+  Files,
+  PenLine,
+  MousePointer2,
+  Minimize2,
+  Split,
+  Download,
+  Layers,
+  FileEdit,
+  Stethoscope,
+  MessageCircle,
   type LucideProps,
 } from 'lucide-react';
 import type { AgentPatternType, SyncStatus } from '../types';
@@ -40,6 +55,23 @@ const iconMap: Record<string, React.FC<LucideProps>> = {
   UserCheck,
   Sparkles,
   ArrowRightCircle,
+  // Pattern and specialized nodes
+  Bot,
+  BookOpen,
+  Table,
+  Grid3x3: Grid3X3,
+  Files,
+  // Context engineering nodes
+  PenLine,
+  MousePointer2,
+  Minimize2,
+  Split,
+  // Data pipeline nodes
+  Download,
+  Layers,
+  FileEdit,
+  Stethoscope,
+  MessageCircle,
 };
 
 type SidebarTab = 'nodes' | 'arguments';
@@ -132,6 +164,9 @@ export default function Sidebar({
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     triggers: true,
     agentic: true,
+    patterns: true,
+    context: false,
+    dataPipeline: false,
     control: true,
     actions: true,
   });
