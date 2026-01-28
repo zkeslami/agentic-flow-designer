@@ -14,7 +14,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from '@xyflow/react';
-import type { AgentNode, AgentPatternType, AgentNodeData, SyncStatus } from './types';
+import type { AgentNode, AgentPatternType, AgentNodeData, SyncStatus, DeepRAGConfig, BatchTransformConfig } from './types';
 import { nodeConfigs } from './utils/nodeConfig';
 import AgentNodeComponent from './components/AgentNode';
 import Sidebar from './components/Sidebar';
@@ -25,6 +25,7 @@ import AIAssistant from './components/AIAssistant';
 import EvaluationPanel from './components/EvaluationPanel';
 import TestInputModal from './components/TestInputModal';
 import ExecutionPanel from './components/ExecutionPanel';
+import { DeepRAGFullEditor, BatchTransformFullEditor } from './components/PatternEditors';
 import type { FlowArgumentsConfig, ExecutionRun, TestInput, ExecutionTrace } from './types/execution';
 import { DEFAULT_FLOW_ARGUMENTS, createExecutionTrace } from './types/execution';
 
@@ -108,6 +109,9 @@ function FlowDesigner() {
   // Sync status for bidirectional editing (CGIS Architecture)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
 
+  // Pattern editor state
+  const [patternEditorNode, setPatternEditorNode] = useState<AgentNode | null>(null);
+
   // Determine sync status based on node states
   const computedSyncStatus = useMemo<SyncStatus>(() => {
     // Check if any nodes have code overrides
@@ -172,7 +176,15 @@ function FlowDesigner() {
   };
 
   const onNodeClick: NodeMouseHandler = useCallback((_, node) => {
-    setSelectedNode(node.id);
+    const nodeData = node.data as AgentNodeData;
+    const nodeConfig = nodeConfigs[nodeData.type as AgentPatternType];
+
+    // Check if this is a pattern node with a specialized editor
+    if (nodeConfig?.hasSpecializedEditor) {
+      setPatternEditorNode(node as AgentNode);
+    } else {
+      setSelectedNode(node.id);
+    }
   }, []);
 
   const onPaneClick = useCallback(() => {
@@ -194,6 +206,16 @@ function FlowDesigner() {
       );
     },
     [setNodes]
+  );
+
+  // Pattern editor config update handler
+  const handlePatternConfigUpdate = useCallback(
+    (config: Record<string, unknown>) => {
+      if (patternEditorNode) {
+        handleNodeUpdate(patternEditorNode.id, { config });
+      }
+    },
+    [patternEditorNode, handleNodeUpdate]
   );
 
   // AI Assistant handlers
@@ -545,6 +567,27 @@ function FlowDesigner() {
         onRerun={handleRerun}
         onCancel={handleCancelRun}
       />
+
+      {/* Pattern Editor Modals */}
+      {patternEditorNode && (patternEditorNode.data as AgentNodeData).type === 'deepRAG' && (
+        <DeepRAGFullEditor
+          isOpen={true}
+          onClose={() => setPatternEditorNode(null)}
+          config={(patternEditorNode.data as AgentNodeData).config as Partial<DeepRAGConfig>}
+          onChange={handlePatternConfigUpdate}
+          nodeLabel={(patternEditorNode.data as AgentNodeData).label}
+        />
+      )}
+
+      {patternEditorNode && (patternEditorNode.data as AgentNodeData).type === 'batchTransform' && (
+        <BatchTransformFullEditor
+          isOpen={true}
+          onClose={() => setPatternEditorNode(null)}
+          config={(patternEditorNode.data as AgentNodeData).config as Partial<BatchTransformConfig>}
+          onChange={handlePatternConfigUpdate}
+          nodeLabel={(patternEditorNode.data as AgentNodeData).label}
+        />
+      )}
     </div>
   );
 }
