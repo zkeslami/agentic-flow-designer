@@ -26,8 +26,12 @@ import EvaluationPanel from './components/EvaluationPanel';
 import TestInputModal from './components/TestInputModal';
 import ExecutionPanel from './components/ExecutionPanel';
 import { DeepRAGFullEditor, BatchTransformFullEditor } from './components/PatternEditors';
+import ActivityBar, { type ActivityView } from './components/ActivityBar';
+import FileExplorer, { type GeneratedFile } from './components/FileExplorer';
+import SourceControlPanel from './components/SourceControlPanel';
 import type { FlowArgumentsConfig, ExecutionRun, TestInput, ExecutionTrace } from './types/execution';
 import { DEFAULT_FLOW_ARGUMENTS, createExecutionTrace } from './types/execution';
+import Editor from '@monaco-editor/react';
 
 const nodeTypes = {
   agentNode: AgentNodeComponent,
@@ -46,19 +50,36 @@ const initialNodes: Node<AgentNodeData>[] = [
     },
   },
   {
-    id: 'retrieval-1',
+    id: 'agent-1',
     type: 'agentNode',
-    position: { x: 350, y: 100 },
+    position: { x: 350, y: 180 },
     data: {
-      type: 'retrieval',
-      label: 'Knowledge Search',
-      config: { groundingMode: 'strict', maxResults: 5 },
+      type: 'agent',
+      label: 'Agent',
+      config: {
+        name: 'Research Agent',
+        role: 'researcher',
+        goal: 'Find relevant information',
+        model: 'gpt-4',
+        temperature: 0.7,
+        tools: [
+          { id: 'tool-1', name: 'Search API', description: 'Search the web', parameters: {}, requiresApproval: false },
+          { id: 'tool-2', name: 'Calculator', description: 'Perform calculations', parameters: {}, requiresApproval: false },
+        ],
+        memoryType: 'conversation',
+        contextWindow: 4096,
+        reasoningMode: 'react',
+        maxIterations: 10,
+        confidenceThreshold: 0.8,
+        hitlMode: 'on_low_confidence',
+        approvalTimeout: 300,
+      },
     },
   },
   {
     id: 'llm-1',
     type: 'agentNode',
-    position: { x: 600, y: 200 },
+    position: { x: 650, y: 200 },
     data: {
       type: 'llm',
       label: 'Generate Response',
@@ -68,7 +89,7 @@ const initialNodes: Node<AgentNodeData>[] = [
   {
     id: 'output-1',
     type: 'agentNode',
-    position: { x: 850, y: 200 },
+    position: { x: 900, y: 200 },
     data: {
       type: 'output',
       label: 'Response',
@@ -78,8 +99,8 @@ const initialNodes: Node<AgentNodeData>[] = [
 ];
 
 const initialEdges: Edge[] = [
-  { id: 'e1-2', source: 'trigger-1', target: 'retrieval-1', animated: true },
-  { id: 'e2-3', source: 'retrieval-1', target: 'llm-1', animated: true },
+  { id: 'e1-2', source: 'trigger-1', target: 'agent-1', animated: true },
+  { id: 'e2-3', source: 'agent-1', target: 'llm-1', animated: true },
   { id: 'e3-4', source: 'llm-1', target: 'output-1', animated: true },
 ];
 
@@ -95,6 +116,11 @@ function FlowDesigner() {
   const [isEvalPanelOpen, setIsEvalPanelOpen] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
+
+  // IDE Layout state
+  const [activeView, setActiveView] = useState<ActivityView>('nodes');
+  const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
+  const [sidebarWidth] = useState(280);
 
   // Flow arguments state
   const [flowArguments, setFlowArguments] = useState<FlowArgumentsConfig>(DEFAULT_FLOW_ARGUMENTS);
@@ -114,16 +140,19 @@ function FlowDesigner() {
 
   // Determine sync status based on node states
   const computedSyncStatus = useMemo<SyncStatus>(() => {
-    // Check if any nodes have code overrides
     const hasCodeOnlyRegions = nodes.some((n) => (n.data as AgentNodeData).hasCodeOverride);
     if (hasCodeOnlyRegions) return 'code_only';
     return syncStatus;
   }, [nodes, syncStatus]);
 
+  // Count changes for source control
+  const changesCount = useMemo(() => {
+    return nodes.length + edges.length;
+  }, [nodes, edges]);
+
   // Force sync handler
   const handleForceSync = useCallback(() => {
     setSyncStatus('parsing');
-    // Simulate sync process
     setTimeout(() => {
       setSyncStatus('synced');
     }, 500);
@@ -179,7 +208,6 @@ function FlowDesigner() {
     const nodeData = node.data as AgentNodeData;
     const nodeConfig = nodeConfigs[nodeData.type as AgentPatternType];
 
-    // Check if this is a pattern node with a specialized editor
     if (nodeConfig?.hasSpecializedEditor) {
       setPatternEditorNode(node as AgentNode);
     } else {
@@ -208,7 +236,6 @@ function FlowDesigner() {
     [setNodes]
   );
 
-  // Pattern editor config update handler
   const handlePatternConfigUpdate = useCallback(
     (config: Record<string, unknown>) => {
       if (patternEditorNode) {
@@ -264,9 +291,7 @@ function FlowDesigner() {
   );
 
   const handleAutoLayout = useCallback(() => {
-    // Simple horizontal layout
     const sortedNodes = [...nodes].sort((a, b) => {
-      // Sort by dependencies (trigger first, output last)
       const order: Record<string, number> = { trigger: 0, output: 100 };
       const aType = (a.data as AgentNodeData).type;
       const bType = (b.data as AgentNodeData).type;
@@ -278,7 +303,7 @@ function FlowDesigner() {
     const layoutedNodes = sortedNodes.map((node, index) => ({
       ...node,
       position: {
-        x: 100 + index * 250,
+        x: 100 + index * 300,
         y: 200,
       },
     }));
@@ -307,7 +332,6 @@ function FlowDesigner() {
     setIsTestInputModalOpen(false);
     setIsExecutionPanelOpen(true);
 
-    // Create a new execution run
     const runId = `run-${Date.now()}`;
     const newRun: ExecutionRun = {
       id: runId,
@@ -326,7 +350,6 @@ function FlowDesigner() {
 
     setCurrentRun(newRun);
 
-    // Simulate execution with traces
     const simulateExecution = async () => {
       const traces: ExecutionTrace[] = [];
       let completedNodes = 0;
@@ -337,17 +360,14 @@ function FlowDesigner() {
         trace.status = 'running';
         trace.llmExplanation = `Processing ${nodeData.label}...`;
 
-        // Update current run with new trace
         traces.push(trace);
         setCurrentRun(prev => prev ? {
           ...prev,
           traces: [...traces],
         } : null);
 
-        // Simulate processing time
         await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
 
-        // Complete the trace
         trace.status = 'completed';
         trace.completedAt = new Date().toISOString();
         trace.durationMs = Math.floor(500 + Math.random() * 1000);
@@ -374,7 +394,6 @@ function FlowDesigner() {
         } : null);
       }
 
-      // Complete the run
       setCurrentRun(prev => {
         if (!prev) return null;
         const completedRun: ExecutionRun = {
@@ -416,13 +435,87 @@ function FlowDesigner() {
     } : null);
   }, []);
 
+  const handleFileSelect = useCallback((file: GeneratedFile) => {
+    setSelectedFile(file);
+    setActiveView('explorer');
+  }, []);
+
   const selectedNodeData = useMemo(() => {
     const found = nodes.find((n) => n.id === selectedNode);
     return found ? (found as AgentNode) : null;
   }, [nodes, selectedNode]);
 
-  // Cast nodes to AgentNode[] for CodePanel and AIAssistant
   const agentNodes = nodes as AgentNode[];
+
+  // Render sidebar content based on active view
+  const renderSidebarContent = () => {
+    switch (activeView) {
+      case 'explorer':
+        return (
+          <FileExplorer
+            nodes={agentNodes}
+            edges={edges}
+            flowName="my_agent_flow"
+            onFileSelect={handleFileSelect}
+            selectedFile={selectedFile?.id}
+          />
+        );
+      case 'sourceControl':
+        return (
+          <SourceControlPanel
+            hasChanges={changesCount > 0}
+            changesCount={changesCount}
+            currentBranch="main"
+          />
+        );
+      case 'nodes':
+        return (
+          <Sidebar
+            onDragStart={onDragStart}
+            flowArguments={flowArguments}
+            onUpdateArguments={setFlowArguments}
+            selectedNodeId={selectedNode}
+            syncStatus={computedSyncStatus}
+            nodeCount={nodes.length}
+            edgeCount={edges.length}
+          />
+        );
+      case 'run':
+      case 'debug':
+        return (
+          <div className="h-full flex flex-col bg-[#181825] p-4">
+            <h3 className="text-sm font-semibold text-[#cdd6f4] mb-4">
+              {activeView === 'run' ? 'Run & Debug' : 'Debug Console'}
+            </h3>
+            <p className="text-xs text-[#6c7086]">
+              {activeView === 'run'
+                ? 'Click the Run button in the toolbar to execute the flow.'
+                : 'Debug output will appear here during execution.'}
+            </p>
+          </div>
+        );
+      case 'search':
+        return (
+          <div className="h-full flex flex-col bg-[#181825] p-4">
+            <h3 className="text-sm font-semibold text-[#cdd6f4] mb-4">Search</h3>
+            <input
+              type="text"
+              placeholder="Search nodes and code..."
+              className="w-full px-3 py-2 bg-[#1e1e2e] border border-[#313244] rounded-md text-sm text-[#cdd6f4] placeholder-[#45475a] focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="h-full flex flex-col bg-[#181825] p-4">
+            <h3 className="text-sm font-semibold text-[#cdd6f4] mb-4">Settings</h3>
+            <p className="text-xs text-[#6c7086]">Flow and editor settings.</p>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#11111b]">
@@ -443,23 +536,62 @@ function FlowDesigner() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar - Node palette */}
+        {/* Activity Bar */}
+        <ActivityBar
+          activeView={activeView}
+          onViewChange={setActiveView}
+          hasChanges={computedSyncStatus !== 'synced'}
+          changesCount={changesCount}
+        />
+
+        {/* Sidebar - Dynamic content based on active view */}
         {viewMode !== 'code' && (
-          <Sidebar
-            onDragStart={onDragStart}
-            flowArguments={flowArguments}
-            onUpdateArguments={setFlowArguments}
-            selectedNodeId={selectedNode}
-            syncStatus={computedSyncStatus}
-            nodeCount={nodes.length}
-            edgeCount={edges.length}
-          />
+          <div
+            className="h-full border-r border-[#313244]"
+            style={{ width: sidebarWidth }}
+          >
+            {renderSidebarContent()}
+          </div>
         )}
 
         {/* Canvas / Code View */}
         <div className="flex-1 flex">
+          {/* File Code Editor - when a file is selected */}
+          {selectedFile && activeView === 'explorer' && (
+            <div className="flex-1 flex flex-col border-r border-[#313244]">
+              {/* File tab */}
+              <div className="flex items-center px-4 py-2 bg-[#1e1e2e] border-b border-[#313244]">
+                <span className="text-sm text-[#cdd6f4]">{selectedFile.name}</span>
+                <button
+                  onClick={() => setSelectedFile(null)}
+                  className="ml-2 p-0.5 hover:bg-[#313244] rounded"
+                >
+                  <span className="text-[#6c7086] text-xs">×</span>
+                </button>
+              </div>
+              {/* Monaco editor */}
+              <div className="flex-1">
+                <Editor
+                  height="100%"
+                  language={selectedFile.type === 'python' ? 'python' : selectedFile.type === 'json' ? 'json' : selectedFile.type === 'yaml' ? 'yaml' : 'markdown'}
+                  theme="vs-dark"
+                  value={selectedFile.content}
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: true },
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    padding: { top: 12 },
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Visual Canvas */}
-          {(viewMode === 'visual' || viewMode === 'split') && (
+          {(viewMode === 'visual' || viewMode === 'split') && !(selectedFile && activeView === 'explorer') && (
             <div
               ref={reactFlowWrapper}
               className={`${viewMode === 'split' ? 'w-1/2' : 'flex-1'} h-full`}
@@ -512,7 +644,7 @@ function FlowDesigner() {
         </div>
 
         {/* Properties Panel - shown when node is selected */}
-        {selectedNode && viewMode !== 'code' && (
+        {selectedNode && viewMode !== 'code' && !selectedFile && (
           <PropertiesPanel
             node={selectedNodeData}
             onUpdate={handleNodeUpdate}
