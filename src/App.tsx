@@ -52,27 +52,37 @@ const initialNodes: Node<AgentNodeData>[] = [
   {
     id: 'agent-1',
     type: 'agentNode',
-    position: { x: 350, y: 180 },
+    position: { x: 400, y: 150 },
     data: {
       type: 'agent',
-      label: 'Agent',
+      label: 'Agent 1',
       config: {
         name: 'Research Agent',
         role: 'researcher',
         goal: 'Find relevant information',
         model: 'gpt-4',
         temperature: 0.7,
-        tools: [
-          { id: 'tool-1', name: 'Search API', description: 'Search the web', parameters: {}, requiresApproval: false },
-          { id: 'tool-2', name: 'Calculator', description: 'Perform calculations', parameters: {}, requiresApproval: false },
+        // Memory configurations
+        memories: [
+          { id: 'mem-1', name: 'MemorySpace', type: 'conversation', maxHistory: 10, autoWrite: true },
         ],
-        memoryType: 'conversation',
+        // Escalation configurations
+        escalations: [
+          { id: 'esc-1', name: 'Escalation_1', trigger: 'low_confidence', threshold: 0.7, timeout: 300, notificationChannel: 'slack', approvers: [] },
+        ],
+        // Context source configurations
+        contextSources: [
+          { id: 'ctx-1', name: 'Competitive Background', type: 'document', source: '/docs/competitive.pdf', priority: 1 },
+        ],
+        // Tool configurations
+        tools: [
+          { id: 'tool-1', name: 'Web Search', type: 'search', description: 'Search the web for information', requiresApproval: false, parameters: {} },
+        ],
+        // Other agent settings
         contextWindow: 4096,
         reasoningMode: 'react',
         maxIterations: 10,
         confidenceThreshold: 0.8,
-        hitlMode: 'on_low_confidence',
-        approvalTimeout: 300,
       },
     },
   },

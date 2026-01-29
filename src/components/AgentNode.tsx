@@ -33,11 +33,23 @@ import {
   Copy,
   MoreHorizontal,
   Plus,
-  ChevronDown,
+  Database,
+  User,
   type LucideProps,
+  type LucideIcon,
 } from 'lucide-react';
-import type { AgentNodeData, AgentPatternType, AgentNode, AgentTool } from '../types';
+import type { AgentNodeData, AgentPatternType, AgentNode } from '../types';
 import { nodeConfigs } from '../utils/nodeConfig';
+import {
+  MemoryPanel,
+  EscalationPanel,
+  ContextPanel,
+  ToolsPanel,
+  type MemoryConfig,
+  type EscalationConfig,
+  type ContextSourceConfig,
+  type ToolConfig,
+} from './AgentConfigPanels';
 
 const iconMap: Record<string, React.FC<LucideProps>> = {
   Zap,
@@ -67,25 +79,72 @@ const iconMap: Record<string, React.FC<LucideProps>> = {
   MessageCircle,
 };
 
-// Connection point configuration for Agent nodes
+// Connection point configuration for Agent nodes (removed Error)
 interface ConnectionPoint {
-  id: string;
+  id: 'memory' | 'escalations' | 'context' | 'tools';
   label: string;
-  position: 'top-left' | 'top-center' | 'bottom-left' | 'bottom-center' | 'right';
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   color: string;
+  icon: LucideIcon;
 }
 
 const AGENT_CONNECTION_POINTS: ConnectionPoint[] = [
-  { id: 'memory', label: 'Memory', position: 'top-left', color: '#a78bfa' },
-  { id: 'escalation', label: 'Escalation', position: 'top-center', color: '#f472b6' },
-  { id: 'context', label: 'Context', position: 'bottom-left', color: '#60a5fa' },
-  { id: 'tools', label: 'Tools', position: 'bottom-center', color: '#34d399' },
-  { id: 'error', label: 'Error', position: 'right', color: '#f87171' },
+  { id: 'memory', label: 'Memory', position: 'top-left', color: '#a78bfa', icon: Database },
+  { id: 'escalations', label: 'Escalations', position: 'top-right', color: '#f472b6', icon: User },
+  { id: 'context', label: 'Context', position: 'bottom-left', color: '#60a5fa', icon: FileText },
+  { id: 'tools', label: 'Tools', position: 'bottom-right', color: '#34d399', icon: Wrench },
 ];
+
+// Sub-node visual component that appears when connection is configured
+interface SubNodeProps {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  count: number;
+  onClick: () => void;
+}
+
+function SubNode({ label, icon: Icon, color, position, count, onClick }: SubNodeProps) {
+  const positionStyles: Record<string, string> = {
+    'top-left': '-top-20 -left-8',
+    'top-right': '-top-20 -right-8',
+    'bottom-left': '-bottom-20 -left-8',
+    'bottom-right': '-bottom-20 -right-8',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className={`absolute ${positionStyles[position]} flex flex-col items-center gap-1 group`}
+    >
+      {/* Dashed line connecting to agent */}
+      <div
+        className={`absolute ${position.startsWith('top') ? 'bottom-0 mb-1' : 'top-0 mt-1'} left-1/2 -translate-x-1/2 w-px h-8 border-l-2 border-dashed`}
+        style={{ borderColor: `${color}50` }}
+      />
+
+      {/* Sub-node circle */}
+      <div
+        className="w-12 h-12 rounded-full flex items-center justify-center transition-all group-hover:scale-110 shadow-lg"
+        style={{ backgroundColor: `${color}15`, border: `2px solid ${color}40` }}
+      >
+        <Icon className="w-5 h-5" style={{ color }} />
+      </div>
+
+      {/* Label */}
+      <span className="text-[10px] text-[#6c7086] font-medium whitespace-nowrap">
+        {label} {count > 0 && `(${count})`}
+      </span>
+    </button>
+  );
+}
 
 function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
   const [isHovered, setIsHovered] = useState(false);
-  const [showToolDropdown, setShowToolDropdown] = useState(false);
+  const [activePanel, setActivePanel] = useState<ConnectionPoint['id'] | null>(null);
+
   const nodeData = data as AgentNodeData;
   const config = nodeConfigs[nodeData.type as AgentPatternType];
   const IconComponent = iconMap[config?.icon] || Zap;
@@ -96,187 +155,261 @@ function AgentNodeComponent({ data, selected }: NodeProps<AgentNode>) {
   // Special rendering for Agent nodes (matching the reference image)
   const isAgentNode = nodeData.type === 'agent';
 
-  const handleAddTool = useCallback(() => {
-    setShowToolDropdown(!showToolDropdown);
-  }, [showToolDropdown]);
+  // Get agent sub-configurations from node data
+  const memories: MemoryConfig[] = (nodeData.config?.memories as MemoryConfig[]) || [];
+  const escalations: EscalationConfig[] = (nodeData.config?.escalations as EscalationConfig[]) || [];
+  const contextSources: ContextSourceConfig[] = (nodeData.config?.contextSources as ContextSourceConfig[]) || [];
+  const tools: ToolConfig[] = (nodeData.config?.tools as ToolConfig[]) || [];
+
+  const handleConnectionClick = useCallback((connectionId: ConnectionPoint['id']) => {
+    setActivePanel(connectionId);
+  }, []);
+
+  // Note: In a real implementation, these handlers would update the node data through the parent
+  // For now, they just close the panel
+  const handleMemoriesChange = useCallback((_newMemories: MemoryConfig[]) => {
+    // Would call onUpdate here with new memories
+    setActivePanel(null);
+  }, []);
+
+  const handleEscalationsChange = useCallback((_newEscalations: EscalationConfig[]) => {
+    setActivePanel(null);
+  }, []);
+
+  const handleContextChange = useCallback((_newSources: ContextSourceConfig[]) => {
+    setActivePanel(null);
+  }, []);
+
+  const handleToolsChange = useCallback((_newTools: ToolConfig[]) => {
+    setActivePanel(null);
+  }, []);
 
   // Agent Node - Special Design
   if (isAgentNode) {
-    const tools: AgentTool[] = (nodeData.config?.tools as AgentTool[]) || [];
-
     return (
-      <div
-        className={`
-          relative rounded-xl transition-all duration-200
-          ${selected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-[#11111b]' : ''}
-        `}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => {
-          setIsHovered(false);
-          setShowToolDropdown(false);
-        }}
-      >
-        {/* Action buttons - shown on hover */}
-        {isHovered && (
-          <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1 bg-[#1e1e2e] border border-[#313244] rounded-lg shadow-lg z-10">
-            <button className="p-1.5 hover:bg-[#313244] rounded transition-colors" title="Delete">
-              <Trash2 className="w-4 h-4 text-[#6c7086] hover:text-red-400" />
-            </button>
-            <button className="p-1.5 hover:bg-[#313244] rounded transition-colors" title="Duplicate">
-              <Copy className="w-4 h-4 text-[#6c7086] hover:text-[#cdd6f4]" />
-            </button>
-            <button className="p-1.5 hover:bg-[#313244] rounded transition-colors" title="More">
-              <MoreHorizontal className="w-4 h-4 text-[#6c7086]" />
-            </button>
-          </div>
-        )}
-
-        {/* Connection points with labels - Top */}
-        <div className="absolute -top-7 left-0 right-0 flex justify-around px-8">
-          {AGENT_CONNECTION_POINTS.filter(p => p.position.startsWith('top')).map((point) => (
-            <div key={point.id} className="flex flex-col items-center">
-              <span className="text-[9px] text-[#6c7086] font-medium mb-1 flex items-center gap-1">
-                {point.label}
-              </span>
-              <div className="relative">
-                <Handle
-                  id={point.id}
-                  type="target"
-                  position={Position.Top}
-                  className="!relative !transform-none !w-3 !h-3 !bg-transparent !border-0"
-                />
-                <div
-                  className="absolute inset-0 w-3 h-3 rotate-45 border-2"
-                  style={{ backgroundColor: `${point.color}30`, borderColor: point.color }}
-                />
-              </div>
-              {/* Plus button */}
-              <button className="mt-1 w-3 h-3 bg-[#313244] hover:bg-blue-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Plus className="w-2 h-2 text-[#6c7086]" />
+      <>
+        <div
+          className={`
+            relative rounded-xl transition-all duration-200
+            ${selected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-[#11111b]' : ''}
+          `}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          style={{ padding: '24px' }} // Extra padding for sub-nodes
+        >
+          {/* Action buttons - shown on hover */}
+          {isHovered && (
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1 bg-[#1e1e2e] border border-[#313244] rounded-lg shadow-lg z-10">
+              <button className="p-1.5 hover:bg-[#313244] rounded transition-colors" title="Delete">
+                <Trash2 className="w-4 h-4 text-[#6c7086] hover:text-red-400" />
+              </button>
+              <button className="p-1.5 hover:bg-[#313244] rounded transition-colors" title="Duplicate">
+                <Copy className="w-4 h-4 text-[#6c7086] hover:text-[#cdd6f4]" />
+              </button>
+              <button className="p-1.5 hover:bg-[#313244] rounded transition-colors" title="More">
+                <MoreHorizontal className="w-4 h-4 text-[#6c7086]" />
               </button>
             </div>
-          ))}
-        </div>
+          )}
 
-        {/* Main node container */}
-        <div className="flex bg-[#1e1e2e] border-2 border-blue-500/50 rounded-xl overflow-hidden min-w-[220px] shadow-lg group">
-          {/* Gradient left border / icon area */}
-          <div className="w-14 bg-gradient-to-b from-purple-500/20 to-pink-500/20 flex items-center justify-center border-r border-[#313244]">
-            <div className="w-9 h-9 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center shadow-md">
-              <Bot className="w-5 h-5 text-white" />
-            </div>
-          </div>
+          {/* Sub-nodes for configured connections */}
+          {memories.length > 0 && (
+            <SubNode
+              id="memory-subnode"
+              label="MemorySpace"
+              icon={Database}
+              color="#a78bfa"
+              position="top-left"
+              count={memories.length}
+              onClick={() => handleConnectionClick('memory')}
+            />
+          )}
+          {escalations.length > 0 && (
+            <SubNode
+              id="escalation-subnode"
+              label="Escalation"
+              icon={User}
+              color="#f472b6"
+              position="top-right"
+              count={escalations.length}
+              onClick={() => handleConnectionClick('escalations')}
+            />
+          )}
+          {contextSources.length > 0 && (
+            <SubNode
+              id="context-subnode"
+              label="Context"
+              icon={FileText}
+              color="#60a5fa"
+              position="bottom-left"
+              count={contextSources.length}
+              onClick={() => handleConnectionClick('context')}
+            />
+          )}
+          {tools.length > 0 && (
+            <SubNode
+              id="tools-subnode"
+              label="Tools"
+              icon={Wrench}
+              color="#34d399"
+              position="bottom-right"
+              count={tools.length}
+              onClick={() => handleConnectionClick('tools')}
+            />
+          )}
 
-          {/* Content area */}
-          <div className="flex-1 py-2 px-3">
-            <h3 className="text-[#cdd6f4] font-semibold text-sm">
-              {nodeData.label || 'Agent'}
-            </h3>
-
-            {/* Tool list */}
-            {tools.length > 0 && (
-              <div className="mt-1.5 space-y-1">
-                {tools.slice(0, 2).map((tool) => (
-                  <div
-                    key={tool.id}
-                    className="flex items-center gap-1.5 px-1.5 py-0.5 bg-[#11111b] rounded text-[10px]"
-                  >
-                    <Wrench className="w-2.5 h-2.5 text-emerald-400" />
-                    <span className="text-[#a6adc8] truncate">{tool.name}</span>
+          {/* Connection points with labels - Top */}
+          <div className="absolute -top-6 left-6 right-6 flex justify-between">
+            {AGENT_CONNECTION_POINTS.filter(p => p.position.startsWith('top')).map((point) => {
+              const hasItems = point.id === 'memory' ? memories.length > 0 :
+                               point.id === 'escalations' ? escalations.length > 0 : false;
+              return (
+                <button
+                  key={point.id}
+                  className="flex flex-col items-center group"
+                  onClick={() => handleConnectionClick(point.id)}
+                >
+                  {/* Plus button when no items */}
+                  {!hasItems && (
+                    <div className="mb-1 w-4 h-4 bg-[#313244] hover:bg-blue-500 rounded-full flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all">
+                      <Plus className="w-2.5 h-2.5 text-[#6c7086] group-hover:text-white" />
+                    </div>
+                  )}
+                  <span className="text-[9px] text-[#6c7086] font-medium mb-1">
+                    {point.label}
+                  </span>
+                  <div className="relative">
+                    <Handle
+                      id={point.id}
+                      type="target"
+                      position={Position.Top}
+                      className="!relative !transform-none !w-3 !h-3 !bg-transparent !border-0"
+                    />
+                    <div
+                      className="absolute inset-0 w-3 h-3 rotate-45 border-2 transition-all group-hover:scale-125"
+                      style={{ backgroundColor: `${point.color}30`, borderColor: point.color }}
+                    />
                   </div>
-                ))}
-                {tools.length > 2 && (
-                  <span className="text-[10px] text-[#6c7086]">+{tools.length - 2} more</span>
-                )}
-              </div>
-            )}
-
-            {/* Add tool button */}
-            <button
-              onClick={handleAddTool}
-              className="mt-1.5 flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-[#6c7086] hover:text-[#cdd6f4] hover:bg-[#313244] rounded transition-colors w-full"
-            >
-              <Plus className="w-2.5 h-2.5" />
-              <span>Add Tool</span>
-              <ChevronDown className="w-2.5 h-2.5 ml-auto" />
-            </button>
-
-            {/* Tool dropdown */}
-            {showToolDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-[#1e1e2e] border border-[#313244] rounded-lg shadow-xl z-20 py-1">
-                {['Search API', 'Calculator', 'Code Interpreter', 'Web Browser'].map((tool) => (
-                  <button
-                    key={tool}
-                    className="w-full px-2 py-1.5 text-left text-xs text-[#a6adc8] hover:bg-[#313244] flex items-center gap-2"
-                    onClick={() => setShowToolDropdown(false)}
-                  >
-                    <Wrench className="w-3 h-3 text-emerald-400" />
-                    {tool}
-                  </button>
-                ))}
-              </div>
-            )}
+                </button>
+              );
+            })}
           </div>
-        </div>
 
-        {/* Connection points - Bottom */}
-        <div className="absolute -bottom-7 left-0 right-0 flex justify-around px-8">
-          {AGENT_CONNECTION_POINTS.filter(p => p.position.startsWith('bottom')).map((point) => (
-            <div key={point.id} className="flex flex-col items-center">
-              <div className="relative">
-                <Handle
-                  id={point.id}
-                  type="target"
-                  position={Position.Bottom}
-                  className="!relative !transform-none !w-3 !h-3 !bg-transparent !border-0"
-                />
-                <div
-                  className="absolute inset-0 w-3 h-3 rotate-45 border-2"
-                  style={{ backgroundColor: `${point.color}30`, borderColor: point.color }}
-                />
+          {/* Main node container */}
+          <div className="flex bg-[#1e1e2e] border-2 border-blue-500/50 rounded-xl overflow-hidden min-w-[240px] shadow-lg group">
+            {/* Gradient left border / icon area */}
+            <div className="w-14 bg-gradient-to-b from-purple-500/20 to-pink-500/20 flex items-center justify-center border-r border-[#313244]">
+              <div className="w-9 h-9 bg-gradient-to-br from-purple-400 to-pink-400 rounded-lg flex items-center justify-center shadow-md">
+                <Bot className="w-5 h-5 text-white" />
               </div>
-              <span className="text-[9px] text-[#6c7086] font-medium mt-1">
-                {point.label}
-              </span>
-              <button className="w-3 h-3 bg-[#313244] hover:bg-blue-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <Plus className="w-2 h-2 text-[#6c7086]" />
-              </button>
             </div>
-          ))}
-        </div>
 
-        {/* Error connection point - Right */}
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-6 flex items-center">
-          <div className="relative mr-1">
-            <Handle
-              id="error"
-              type="source"
-              position={Position.Right}
-              className="!relative !transform-none !w-3 !h-3 !bg-transparent !border-0"
-            />
-            <div
-              className="absolute inset-0 w-3 h-3 rotate-45 border-2"
-              style={{ backgroundColor: '#f8717130', borderColor: '#f87171' }}
-            />
+            {/* Content area */}
+            <div className="flex-1 py-3 px-4">
+              <h3 className="text-[#cdd6f4] font-semibold text-sm">
+                {nodeData.label || 'Agent'}
+              </h3>
+              <p className="text-[10px] text-[#6c7086] mt-0.5">Autonomous Agent</p>
+
+              {/* Quick tool preview */}
+              {tools.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {tools.slice(0, 3).map((tool) => (
+                    <span
+                      key={tool.id}
+                      className="px-1.5 py-0.5 bg-[#11111b] rounded text-[9px] text-[#a6adc8]"
+                    >
+                      {tool.name}
+                    </span>
+                  ))}
+                  {tools.length > 3 && (
+                    <span className="px-1.5 py-0.5 text-[9px] text-[#6c7086]">
+                      +{tools.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-          <span className="text-[9px] text-[#6c7086] font-medium">- Error</span>
+
+          {/* Connection points - Bottom */}
+          <div className="absolute -bottom-6 left-6 right-6 flex justify-between">
+            {AGENT_CONNECTION_POINTS.filter(p => p.position.startsWith('bottom')).map((point) => {
+              const hasItems = point.id === 'context' ? contextSources.length > 0 :
+                               point.id === 'tools' ? tools.length > 0 : false;
+              return (
+                <button
+                  key={point.id}
+                  className="flex flex-col items-center group"
+                  onClick={() => handleConnectionClick(point.id)}
+                >
+                  <div className="relative">
+                    <Handle
+                      id={point.id}
+                      type="target"
+                      position={Position.Bottom}
+                      className="!relative !transform-none !w-3 !h-3 !bg-transparent !border-0"
+                    />
+                    <div
+                      className="absolute inset-0 w-3 h-3 rotate-45 border-2 transition-all group-hover:scale-125"
+                      style={{ backgroundColor: `${point.color}30`, borderColor: point.color }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-[#6c7086] font-medium mt-1">
+                    {point.label}
+                  </span>
+                  {/* Plus button when no items */}
+                  {!hasItems && (
+                    <div className="mt-1 w-4 h-4 bg-[#313244] hover:bg-blue-500 rounded-full flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all">
+                      <Plus className="w-2.5 h-2.5 text-[#6c7086] group-hover:text-white" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Main input handle */}
+          <Handle
+            type="target"
+            position={Position.Left}
+            className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e2e]"
+          />
+
+          {/* Main output handle */}
+          <Handle
+            type="source"
+            position={Position.Right}
+            className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e2e]"
+          />
         </div>
 
-        {/* Main input handle */}
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e2e]"
+        {/* Configuration Panels */}
+        <MemoryPanel
+          isOpen={activePanel === 'memory'}
+          onClose={() => setActivePanel(null)}
+          memories={memories}
+          onChange={handleMemoriesChange}
         />
-
-        {/* Main output handle */}
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!w-3 !h-3 !bg-blue-500 !border-2 !border-[#1e1e2e]"
-          style={{ top: '75%' }}
+        <EscalationPanel
+          isOpen={activePanel === 'escalations'}
+          onClose={() => setActivePanel(null)}
+          escalations={escalations}
+          onChange={handleEscalationsChange}
         />
-      </div>
+        <ContextPanel
+          isOpen={activePanel === 'context'}
+          onClose={() => setActivePanel(null)}
+          sources={contextSources}
+          onChange={handleContextChange}
+        />
+        <ToolsPanel
+          isOpen={activePanel === 'tools'}
+          onClose={() => setActivePanel(null)}
+          tools={tools}
+          onChange={handleToolsChange}
+        />
+      </>
     );
   }
 
